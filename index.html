@@ -9,8 +9,9 @@
     .draggable {
       cursor: grab;
     }
-    .droppable:hover {
-      background-color: #f3f4f6;
+    .editable:hover {
+      outline: 2px dashed #3b82f6;
+      outline-offset: 4px;
     }
   </style>
 </head>
@@ -19,7 +20,7 @@
   <!-- Header -->
   <header class="bg-white shadow p-4 flex justify-between items-center">
     <h1 class="text-xl font-bold">Eco ToolBuilder</h1>
-    <button class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Export Tool</button>
+    <button onclick="exportHTML()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Export HTML</button>
   </header>
 
   <!-- Main layout -->
@@ -55,6 +56,7 @@
       ev.preventDefault();
       const type = ev.dataTransfer.getData("type");
       const workspace = document.getElementById("workspace");
+      workspace.querySelector("p")?.remove(); // remove "drag components..." msg
       const element = createElementFromType(type);
       if (element) workspace.appendChild(element);
     }
@@ -65,18 +67,35 @@
       });
     });
 
+    function createComponent(html) {
+      const wrapper = document.createElement("div");
+      wrapper.innerHTML = html;
+      const el = wrapper.firstChild;
+      el.classList.add("editable");
+      makeEditable(el);
+      return el;
+    }
+
+    function makeEditable(element) {
+      element.querySelectorAll("*").forEach(child => {
+        if (child.nodeType === 1 && child.textContent.trim().length > 0) {
+          child.setAttribute("contenteditable", "true");
+        }
+      });
+    }
+
     function createElementFromType(type) {
       switch(type) {
         case "title":
-          return createComponent(`<h2 class="text-2xl font-bold my-4">New Title</h2>`);
+          return createComponent(`<h2 class="text-2xl font-bold my-4">Click to edit title</h2>`);
         case "tabs":
           return createComponent(`
-            <div class="my-4">
-              <div class="flex space-x-4 border-b">
+            <div class="my-4 bg-white border p-2 rounded">
+              <div class="flex space-x-4 border-b mb-2">
                 <button class="py-2 px-4 border-b-2 border-blue-500 text-blue-500">Tab 1</button>
                 <button class="py-2 px-4">Tab 2</button>
               </div>
-              <div class="p-4 bg-white border mt-2">Tab content here...</div>
+              <div class="p-2">Click to edit tab content...</div>
             </div>`);
         case "map":
           return createComponent(`<div class="my-4 bg-green-200 h-48 flex items-center justify-center text-green-800">[Map Placeholder]</div>`);
@@ -87,16 +106,22 @@
         case "form":
           return createComponent(`<form class="my-4 bg-white p-4 border rounded space-y-2"><label>Question: <input class="border p-1 ml-2" /></label></form>`);
         case "tile":
-          return createComponent(`<div class="my-4 bg-white shadow p-4 rounded">Tile content here...</div>`);
+          return createComponent(`<div class="my-4 bg-white shadow p-4 rounded">Click to edit tile content...</div>`);
         default:
           return null;
       }
     }
 
-    function createComponent(html) {
-      const wrapper = document.createElement("div");
-      wrapper.innerHTML = html;
-      return wrapper.firstChild;
+    function exportHTML() {
+      const workspace = document.getElementById("workspace");
+      const html = workspace.innerHTML;
+      const blob = new Blob([html], {type: 'text/html'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'tool-layout.html';
+      a.click();
+      URL.revokeObjectURL(url);
     }
   </script>
 </body>
