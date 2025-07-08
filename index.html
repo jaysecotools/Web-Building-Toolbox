@@ -13,6 +13,28 @@
       outline: 2px dashed #3b82f6;
       outline-offset: 4px;
     }
+    .workspace-item {
+      position: relative;
+      cursor: move;
+    }
+    .delete-btn {
+      position: absolute;
+      top: -0.75rem;
+      right: -0.75rem;
+      background: #ef4444;
+      color: white;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      width: 1.5rem;
+      height: 1.5rem;
+      text-align: center;
+      line-height: 1.5rem;
+      cursor: pointer;
+      z-index: 10;
+    }
+    .workspace-item.drag-over {
+      border: 2px dashed #3b82f6;
+    }
   </style>
 </head>
 <body class="bg-gray-100 h-screen overflow-hidden flex flex-col">
@@ -41,41 +63,58 @@
     </aside>
 
     <!-- Workspace -->
-    <section id="workspace" class="flex-1 p-6 overflow-auto bg-gray-50 droppable border-l" ondrop="drop(event)" ondragover="allowDrop(event)">
+    <section id="workspace" class="flex-1 p-6 overflow-auto bg-gray-50 droppable border-l"
+      ondrop="drop(event)" ondragover="allowDrop(event)">
       <p class="text-gray-400 italic text-center mt-32">Drag components here to start building your tool...</p>
     </section>
   </main>
 
   <!-- Script -->
   <script>
+    // Allow drop from toolbox
     function allowDrop(ev) {
       ev.preventDefault();
     }
 
-    function drop(ev) {
-      ev.preventDefault();
-      const type = ev.dataTransfer.getData("type");
-      const workspace = document.getElementById("workspace");
-      workspace.querySelector("p")?.remove(); // remove "drag components..." msg
-      const element = createElementFromType(type);
-      if (element) workspace.appendChild(element);
-    }
-
+    // Drag from toolbox
     document.querySelectorAll('.draggable').forEach(el => {
       el.addEventListener('dragstart', e => {
         e.dataTransfer.setData("type", e.target.getAttribute("data-type"));
       });
     });
 
+    // Drop from toolbox
+    function drop(ev) {
+      ev.preventDefault();
+      const type = ev.dataTransfer.getData("type");
+      const workspace = document.getElementById("workspace");
+      workspace.querySelector("p")?.remove(); // remove hint
+      const element = createElementFromType(type);
+      if (element) workspace.appendChild(element);
+    }
+
+    // Create editable + draggable block
     function createComponent(html) {
       const wrapper = document.createElement("div");
       wrapper.innerHTML = html;
       const el = wrapper.firstChild;
-      el.classList.add("editable");
+
+      // Make editable
+      el.classList.add("editable", "workspace-item");
       makeEditable(el);
+      makeReorderable(el);
+
+      // Add delete button
+      const del = document.createElement("div");
+      del.className = "delete-btn";
+      del.innerHTML = "&times;";
+      del.onclick = () => el.remove();
+      el.appendChild(del);
+
       return el;
     }
 
+    // Allow editing
     function makeEditable(element) {
       element.querySelectorAll("*").forEach(child => {
         if (child.nodeType === 1 && child.textContent.trim().length > 0) {
@@ -84,6 +123,49 @@
       });
     }
 
+    // Drag-reorder within workspace
+    function makeReorderable(el) {
+      el.setAttribute("draggable", "true");
+      el.addEventListener("dragstart", e => {
+        e.dataTransfer.setData("text/plain", "");
+        draggingElement = el;
+      });
+      el.addEventListener("dragover", e => {
+        e.preventDefault();
+        el.classList.add("drag-over");
+      });
+      el.addEventListener("dragleave", () => {
+        el.classList.remove("drag-over");
+      });
+      el.addEventListener("drop", e => {
+        e.preventDefault();
+        el.classList.remove("drag-over");
+        const workspace = document.getElementById("workspace");
+        workspace.insertBefore(draggingElement, el.nextSibling);
+      });
+    }
+
+    let draggingElement = null;
+
+    // Export function
+    function exportHTML() {
+      const workspace = document.getElementById("workspace");
+      const clone = workspace.cloneNode(true);
+
+      // Remove delete buttons from export
+      clone.querySelectorAll(".delete-btn").forEach(btn => btn.remove());
+
+      const html = clone.innerHTML;
+      const blob = new Blob([html], {type: 'text/html'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'tool-layout.html';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    // Block builder
     function createElementFromType(type) {
       switch(type) {
         case "title":
@@ -110,18 +192,6 @@
         default:
           return null;
       }
-    }
-
-    function exportHTML() {
-      const workspace = document.getElementById("workspace");
-      const html = workspace.innerHTML;
-      const blob = new Blob([html], {type: 'text/html'});
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'tool-layout.html';
-      a.click();
-      URL.revokeObjectURL(url);
     }
   </script>
 </body>
