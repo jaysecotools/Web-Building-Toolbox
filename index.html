@@ -1,120 +1,84 @@
-<!DOCTYPE html>
-<html lang="en">
+<!DOCTYPE html><html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Web Toolbox</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
   <style>
-    .draggable {
-      cursor: grab;
-    }
-    .editable:hover {
-      outline: 2px dashed #3b82f6;
-      outline-offset: 4px;
-    }
-    .workspace-item {
-      position: relative;
-      cursor: move;
-    }
+    .draggable { cursor: grab; }
+    .editable:hover { outline: 2px dashed #3b82f6; outline-offset: 4px; }
+    .workspace-item { position: relative; cursor: move; }
     .delete-btn {
-      position: absolute;
-      top: -0.75rem;
-      right: -0.75rem;
-      background: #ef4444;
-      color: white;
-      border-radius: 9999px;
-      font-size: 0.75rem;
-      width: 1.5rem;
-      height: 1.5rem;
-      text-align: center;
-      line-height: 1.5rem;
-      cursor: pointer;
-      z-index: 10;
+      position: absolute; top: -0.75rem; right: -0.75rem;
+      background: #ef4444; color: white;
+      border-radius: 9999px; font-size: 0.75rem;
+      width: 1.5rem; height: 1.5rem;
+      text-align: center; line-height: 1.5rem;
+      cursor: pointer; z-index: 10;
     }
-    .workspace-item.drag-over {
-      border: 2px dashed #3b82f6;
-    }
+    .workspace-item.drag-over { border: 2px dashed #3b82f6; }
   </style>
 </head>
-<body class="bg-gray-100 h-screen overflow-hidden flex flex-col">
-
-  <!-- Header -->
-  <header class="bg-white shadow p-4 flex justify-between items-center">
+<body class="bg-gray-100 h-screen overflow-hidden flex flex-col">  <header class="bg-white shadow p-4 flex justify-between items-center">
     <h1 class="text-xl font-bold">Eco ToolBuilder</h1>
     <button onclick="exportHTML()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Export HTML</button>
-  </header>
-
-  <!-- Main layout -->
-  <main class="flex flex-1 overflow-hidden">
-
-    <!-- Sidebar -->
+  </header>  <main class="flex flex-1 overflow-hidden">
     <aside class="w-64 bg-white border-r p-4 overflow-y-auto">
       <h2 class="text-lg font-semibold mb-4">Toolbox</h2>
       <div id="toolbox" class="space-y-4">
         <div class="draggable bg-gray-200 p-2 rounded" draggable="true" data-type="title">Title Block</div>
         <div class="draggable bg-gray-200 p-2 rounded" draggable="true" data-type="tabs">Tabs</div>
-        <div class="draggable bg-gray-200 p-2 rounded" draggable="true" data-type="map">Map</div>
+        <div class="draggable bg-gray-200 p-2 rounded" draggable="true" data-type="map">Map Widget</div>
         <div class="draggable bg-gray-200 p-2 rounded" draggable="true" data-type="chart">Chart</div>
         <div class="draggable bg-gray-200 p-2 rounded" draggable="true" data-type="menu">Menu</div>
-        <div class="draggable bg-gray-200 p-2 rounded" draggable="true" data-type="form">Question/Form</div>
+        <div class="draggable bg-gray-200 p-2 rounded" draggable="true" data-type="form">Form</div>
         <div class="draggable bg-gray-200 p-2 rounded" draggable="true" data-type="tile">Tile/Card</div>
+        <div class="draggable bg-gray-200 p-2 rounded" draggable="true" data-type="collapsible">Collapsible Section</div>
+        <div class="draggable bg-gray-200 p-2 rounded" draggable="true" data-type="button">Button with Event</div>
       </div>
-    </aside>
+    </aside><section id="workspace" class="flex-1 p-6 overflow-auto bg-gray-50 droppable border-l"
+  ondrop="drop(event)" ondragover="allowDrop(event)">
+  <p class="text-gray-400 italic text-center mt-32">Drag components here to start building your tool...</p>
+</section>
 
-    <!-- Workspace -->
-    <section id="workspace" class="flex-1 p-6 overflow-auto bg-gray-50 droppable border-l"
-      ondrop="drop(event)" ondragover="allowDrop(event)">
-      <p class="text-gray-400 italic text-center mt-32">Drag components here to start building your tool...</p>
-    </section>
-  </main>
-
-  <!-- Script -->
-  <script>
-    // Allow drop from toolbox
-    function allowDrop(ev) {
-      ev.preventDefault();
-    }
-
-    // Drag from toolbox
+  </main>  <script>
+    function allowDrop(ev) { ev.preventDefault(); }
     document.querySelectorAll('.draggable').forEach(el => {
       el.addEventListener('dragstart', e => {
         e.dataTransfer.setData("type", e.target.getAttribute("data-type"));
       });
     });
 
-    // Drop from toolbox
     function drop(ev) {
       ev.preventDefault();
       const type = ev.dataTransfer.getData("type");
       const workspace = document.getElementById("workspace");
-      workspace.querySelector("p")?.remove(); // remove hint
+      workspace.querySelector("p")?.remove();
       const element = createElementFromType(type);
       if (element) workspace.appendChild(element);
     }
 
-    // Create editable + draggable block
-    function createComponent(html) {
+    function createComponent(html, callback) {
       const wrapper = document.createElement("div");
       wrapper.innerHTML = html;
       const el = wrapper.firstChild;
-
-      // Make editable
       el.classList.add("editable", "workspace-item");
       makeEditable(el);
       makeReorderable(el);
 
-      // Add delete button
       const del = document.createElement("div");
       del.className = "delete-btn";
       del.innerHTML = "&times;";
       del.onclick = () => el.remove();
       el.appendChild(del);
 
+      callback?.(el);
       return el;
     }
 
-    // Allow editing
     function makeEditable(element) {
       element.querySelectorAll("*").forEach(child => {
         if (child.nodeType === 1 && child.textContent.trim().length > 0) {
@@ -123,7 +87,6 @@
       });
     }
 
-    // Drag-reorder within workspace
     function makeReorderable(el) {
       el.setAttribute("draggable", "true");
       el.addEventListener("dragstart", e => {
@@ -147,14 +110,10 @@
 
     let draggingElement = null;
 
-    // Export function
     function exportHTML() {
       const workspace = document.getElementById("workspace");
       const clone = workspace.cloneNode(true);
-
-      // Remove delete buttons from export
       clone.querySelectorAll(".delete-btn").forEach(btn => btn.remove());
-
       const html = clone.innerHTML;
       const blob = new Blob([html], {type: 'text/html'});
       const url = URL.createObjectURL(blob);
@@ -165,7 +124,6 @@
       URL.revokeObjectURL(url);
     }
 
-    // Block builder
     function createElementFromType(type) {
       switch(type) {
         case "title":
@@ -180,19 +138,51 @@
               <div class="p-2">Click to edit tab content...</div>
             </div>`);
         case "map":
-          return createComponent(`<div class="my-4 bg-green-200 h-48 flex items-center justify-center text-green-800">[Map Placeholder]</div>`);
+          const id = `map-${Date.now()}`;
+          return createComponent(`<div class="my-4 h-64" id="${id}" style="min-height:200px"></div>`, el => {
+            setTimeout(() => {
+              const map = L.map(id).setView([-42, 147], 7);
+              L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap'
+              }).addTo(map);
+            }, 100);
+          });
         case "chart":
-          return createComponent(`<div class="my-4 bg-purple-200 h-48 flex items-center justify-center text-purple-800">[Chart Placeholder]</div>`);
+          const canvasId = `chart-${Date.now()}`;
+          return createComponent(`<canvas id="${canvasId}" class="my-4 w-full max-w-md h-48"></canvas>`, el => {
+            const ctx = document.getElementById(canvasId).getContext("2d");
+            new Chart(ctx, {
+              type: 'bar',
+              data: {
+                labels: ['A', 'B', 'C'],
+                datasets: [{ label: 'Example', data: [12, 19, 3], backgroundColor: '#6366f1' }]
+              },
+              options: { responsive: true, maintainAspectRatio: false }
+            });
+          });
         case "menu":
           return createComponent(`<nav class="my-4 bg-white border p-2 rounded"><ul class="space-y-2"><li>Menu Item 1</li><li>Menu Item 2</li></ul></nav>`);
         case "form":
           return createComponent(`<form class="my-4 bg-white p-4 border rounded space-y-2"><label>Question: <input class="border p-1 ml-2" /></label></form>`);
         case "tile":
           return createComponent(`<div class="my-4 bg-white shadow p-4 rounded">Click to edit tile content...</div>`);
+        case "collapsible":
+          return createComponent(`
+            <div class="my-4 border rounded overflow-hidden">
+              <button class="w-full text-left px-4 py-2 bg-blue-100">Toggle Section</button>
+              <div class="p-4 bg-white">Click to edit collapsible content...</div>
+            </div>`, el => {
+              const btn = el.querySelector("button");
+              const panel = btn.nextElementSibling;
+              btn.addEventListener("click", () => panel.classList.toggle("hidden"));
+            });
+        case "button":
+          return createComponent(`<button class="my-4 bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded">Click Me</button>`, el => {
+            el.addEventListener("click", () => alert("Button clicked!"));
+          });
         default:
           return null;
       }
     }
-  </script>
-</body>
+  </script></body>
 </html>
