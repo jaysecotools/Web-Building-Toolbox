@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Web Toolbox</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Add external libraries -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     .draggable {
       cursor: grab;
@@ -16,6 +20,7 @@
     .workspace-item {
       position: relative;
       cursor: move;
+      margin-bottom: 1rem;
     }
     .delete-btn {
       position: absolute;
@@ -31,9 +36,49 @@
       line-height: 1.5rem;
       cursor: pointer;
       z-index: 10;
+      display: none;
+    }
+    .workspace-item:hover .delete-btn {
+      display: block;
     }
     .workspace-item.drag-over {
       border: 2px dashed #3b82f6;
+    }
+    #map { height: 300px; }
+    .collapsible-content {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.2s ease-out;
+    }
+    .collapsible-content.expanded {
+      max-height: 1000px;
+    }
+    #properties-panel {
+      width: 300px;
+      border-left: 1px solid #e5e7eb;
+      background: white;
+      overflow-y: auto;
+    }
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
+    }
+    .context-menu {
+      position: absolute;
+      z-index: 1000;
+      background: white;
+      border: 1px solid #ddd;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+      display: none;
+    }
+    .context-menu-item {
+      padding: 8px 12px;
+      cursor: pointer;
+    }
+    .context-menu-item:hover {
+      background: #f0f0f0;
     }
   </style>
 </head>
@@ -42,35 +87,133 @@
   <!-- Header -->
   <header class="bg-white shadow p-4 flex justify-between items-center">
     <h1 class="text-xl font-bold">Eco ToolBuilder</h1>
-    <button onclick="exportHTML()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Export HTML</button>
+    <div>
+      <button onclick="showExportOptions()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 mr-2">Export</button>
+      <button onclick="clearWorkspace()" class="bg-gray-200 text-gray-800 px-4 py-2 rounded hover:bg-gray-300">Clear</button>
+    </div>
   </header>
 
   <!-- Main layout -->
   <main class="flex flex-1 overflow-hidden">
-
     <!-- Sidebar -->
     <aside class="w-64 bg-white border-r p-4 overflow-y-auto">
       <h2 class="text-lg font-semibold mb-4">Toolbox</h2>
       <div id="toolbox" class="space-y-4">
         <div class="draggable bg-gray-200 p-2 rounded" draggable="true" data-type="title">Title Block</div>
         <div class="draggable bg-gray-200 p-2 rounded" draggable="true" data-type="tabs">Tabs</div>
-        <div class="draggable bg-gray-200 p-2 rounded" draggable="true" data-type="map">Map</div>
+        <div class="draggable bg-gray-200 p-2 rounded" draggable="true" data-type="map">Interactive Map</div>
         <div class="draggable bg-gray-200 p-2 rounded" draggable="true" data-type="chart">Chart</div>
         <div class="draggable bg-gray-200 p-2 rounded" draggable="true" data-type="menu">Menu</div>
         <div class="draggable bg-gray-200 p-2 rounded" draggable="true" data-type="form">Question/Form</div>
         <div class="draggable bg-gray-200 p-2 rounded" draggable="true" data-type="tile">Tile/Card</div>
+        <div class="draggable bg-gray-200 p-2 rounded" draggable="true" data-type="button">Button</div>
+        <div class="draggable bg-gray-200 p-2 rounded" draggable="true" data-type="collapse">Collapsible Section</div>
+        <div class="draggable bg-gray-200 p-2 rounded" draggable="true" data-type="table">Data Table</div>
+        <div class="draggable bg-gray-200 p-2 rounded" draggable="true" data-type="progress">Progress Bar</div>
+        <div class="draggable bg-gray-200 p-2 rounded" draggable="true" data-type="toggle">Toggle Switch</div>
       </div>
     </aside>
 
     <!-- Workspace -->
-    <section id="workspace" class="flex-1 p-6 overflow-auto bg-gray-50 droppable border-l"
+    <section id="workspace" class="flex-1 p-6 overflow-auto bg-gray-50 droppable"
       ondrop="drop(event)" ondragover="allowDrop(event)">
       <p class="text-gray-400 italic text-center mt-32">Drag components here to start building your tool...</p>
     </section>
+
+    <!-- Properties Panel -->
+    <aside id="properties-panel" class="hidden">
+      <div class="p-4">
+        <h2 class="text-lg font-semibold mb-4">Component Properties</h2>
+        <div id="property-fields" class="space-y-4">
+          <p class="text-gray-500">Select a component to edit its properties</p>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Context Menu -->
+    <div id="context-menu" class="context-menu">
+      <div class="context-menu-item" onclick="duplicateSelectedComponent()">Duplicate</div>
+      <div class="context-menu-item" onclick="deleteSelectedComponent()">Delete</div>
+      <div class="context-menu-item" onclick="moveComponentUp()">Move Up</div>
+      <div class="context-menu-item" onclick="moveComponentDown()">Move Down</div>
+      <div class="context-menu-item" onclick="editComponentProperties()">Properties</div>
+    </div>
+
+    <!-- Export Modal -->
+    <div id="export-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden">
+      <div class="bg-white p-6 rounded-lg w-96">
+        <h3 class="text-lg font-semibold mb-4">Export Options</h3>
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium mb-1">Include Libraries</label>
+            <div class="space-y-2">
+              <label class="flex items-center">
+                <input type="checkbox" class="mr-2" checked id="include-leaflet"> Leaflet.js (for maps)
+              </label>
+              <label class="flex items-center">
+                <input type="checkbox" class="mr-2" checked id="include-chartjs"> Chart.js (for charts)
+              </label>
+            </div>
+          </div>
+          <div class="flex justify-end space-x-2">
+            <button onclick="hideExportModal()" class="px-4 py-2 border rounded">Cancel</button>
+            <button onclick="exportHTML()" class="px-4 py-2 bg-blue-600 text-white rounded">Export HTML</button>
+          </div>
+        </div>
+      </div>
+    </div>
   </main>
 
-  <!-- Script -->
   <script>
+    // Global variables
+    let draggingElement = null;
+    let selectedComponent = null;
+    let contextMenu = document.getElementById('context-menu');
+    
+    // Initialize the app
+    document.addEventListener('DOMContentLoaded', function() {
+      setupWorkspace();
+      setupContextMenu();
+    });
+
+    function setupWorkspace() {
+      const workspace = document.getElementById('workspace');
+      
+      // Handle right-click for context menu
+      workspace.addEventListener('contextmenu', function(e) {
+        e.preventDefault();
+        // Find the closest workspace item
+        let target = e.target;
+        while (target && !target.classList.contains('workspace-item') && target !== workspace) {
+          target = target.parentNode;
+        }
+        
+        if (target && target.classList.contains('workspace-item')) {
+          selectedComponent = target;
+          showContextMenu(e);
+        }
+      });
+      
+      // Hide context menu on click
+      document.addEventListener('click', function() {
+        contextMenu.style.display = 'none';
+      });
+    }
+
+    function setupContextMenu() {
+      document.addEventListener('click', function(e) {
+        if (e.target.closest('#context-menu') === null) {
+          contextMenu.style.display = 'none';
+        }
+      });
+    }
+
+    function showContextMenu(e) {
+      contextMenu.style.display = 'block';
+      contextMenu.style.left = `${e.pageX}px`;
+      contextMenu.style.top = `${e.pageY}px`;
+    }
+
     // Allow drop from toolbox
     function allowDrop(ev) {
       ev.preventDefault();
@@ -90,7 +233,35 @@
       const workspace = document.getElementById("workspace");
       workspace.querySelector("p")?.remove(); // remove hint
       const element = createElementFromType(type);
-      if (element) workspace.appendChild(element);
+      if (element) {
+        workspace.appendChild(element);
+        // Initialize component if needed
+        initializeComponent(element, type);
+      }
+    }
+
+    // Initialize component-specific functionality
+    function initializeComponent(element, type) {
+      switch(type) {
+        case 'map':
+          initMap(element);
+          break;
+        case 'chart':
+          initChart(element);
+          break;
+        case 'button':
+          setupButton(element);
+          break;
+        case 'collapse':
+          setupCollapse(element);
+          break;
+        case 'tabs':
+          setupTabs(element);
+          break;
+        case 'toggle':
+          setupToggle(element);
+          break;
+      }
     }
 
     // Create editable + draggable block
@@ -108,8 +279,19 @@
       const del = document.createElement("div");
       del.className = "delete-btn";
       del.innerHTML = "&times;";
-      del.onclick = () => el.remove();
+      del.onclick = (e) => {
+        e.stopPropagation();
+        el.remove();
+      };
       el.appendChild(del);
+
+      // Add click handler for property panel
+      el.addEventListener('click', function(e) {
+        if (e.target !== del) {
+          selectedComponent = el;
+          showPropertiesPanel(el);
+        }
+      });
 
       return el;
     }
@@ -117,7 +299,8 @@
     // Allow editing
     function makeEditable(element) {
       element.querySelectorAll("*").forEach(child => {
-        if (child.nodeType === 1 && child.textContent.trim().length > 0) {
+        if (child.nodeType === 1 && child.textContent.trim().length > 0 && 
+            !child.classList.contains('no-edit')) {
           child.setAttribute("contenteditable", "true");
         }
       });
@@ -145,53 +328,592 @@
       });
     }
 
-    let draggingElement = null;
-
-    // Export function
-    function exportHTML() {
-      const workspace = document.getElementById("workspace");
-      const clone = workspace.cloneNode(true);
-
-      // Remove delete buttons from export
-      clone.querySelectorAll(".delete-btn").forEach(btn => btn.remove());
-
-      const html = clone.innerHTML;
-      const blob = new Blob([html], {type: 'text/html'});
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'tool-layout.html';
-      a.click();
-      URL.revokeObjectURL(url);
-    }
-
     // Block builder
     function createElementFromType(type) {
       switch(type) {
         case "title":
-          return createComponent(`<h2 class="text-2xl font-bold my-4">Click to edit title</h2>`);
+          return createComponent(`<h2 class="text-2xl font-bold my-4 p-2">Click to edit title</h2>`);
         case "tabs":
           return createComponent(`
             <div class="my-4 bg-white border p-2 rounded">
               <div class="flex space-x-4 border-b mb-2">
-                <button class="py-2 px-4 border-b-2 border-blue-500 text-blue-500">Tab 1</button>
-                <button class="py-2 px-4">Tab 2</button>
+                <button class="tab-btn py-2 px-4 border-b-2 border-blue-500 text-blue-500" data-tab="tab1">Tab 1</button>
+                <button class="tab-btn py-2 px-4" data-tab="tab2">Tab 2</button>
               </div>
-              <div class="p-2">Click to edit tab content...</div>
+              <div class="tab-content p-2 active" id="tab1">Click to edit tab 1 content...</div>
+              <div class="tab-content p-2" id="tab2">Click to edit tab 2 content...</div>
             </div>`);
         case "map":
-          return createComponent(`<div class="my-4 bg-green-200 h-48 flex items-center justify-center text-green-800">[Map Placeholder]</div>`);
+          return createComponent(`
+            <div class="my-4 bg-white border rounded overflow-hidden">
+              <div id="map" class="h-64"></div>
+              <div class="p-2 bg-gray-50 text-sm text-gray-500">Double click to edit map properties</div>
+            </div>`);
         case "chart":
-          return createComponent(`<div class="my-4 bg-purple-200 h-48 flex items-center justify-center text-purple-800">[Chart Placeholder]</div>`);
+          return createComponent(`
+            <div class="my-4 bg-white border rounded overflow-hidden">
+              <canvas id="chart" height="200"></canvas>
+              <div class="p-2 bg-gray-50 text-sm text-gray-500">Double click to edit chart properties</div>
+            </div>`);
         case "menu":
-          return createComponent(`<nav class="my-4 bg-white border p-2 rounded"><ul class="space-y-2"><li>Menu Item 1</li><li>Menu Item 2</li></ul></nav>`);
+          return createComponent(`
+            <nav class="my-4 bg-white border p-2 rounded">
+              <ul class="space-y-2">
+                <li class="p-2 hover:bg-gray-100">Menu Item 1</li>
+                <li class="p-2 hover:bg-gray-100">Menu Item 2</li>
+              </ul>
+            </nav>`);
         case "form":
-          return createComponent(`<form class="my-4 bg-white p-4 border rounded space-y-2"><label>Question: <input class="border p-1 ml-2" /></label></form>`);
+          return createComponent(`
+            <form class="my-4 bg-white p-4 border rounded space-y-4">
+              <div class="space-y-2">
+                <label class="block text-sm font-medium">Question</label>
+                <input type="text" class="border p-2 w-full rounded" placeholder="Enter your question">
+              </div>
+              <div class="space-y-2">
+                <label class="block text-sm font-medium">Answer Type</label>
+                <select class="border p-2 w-full rounded">
+                  <option>Text</option>
+                  <option>Number</option>
+                  <option>Date</option>
+                  <option>Multiple Choice</option>
+                </select>
+              </div>
+            </form>`);
         case "tile":
-          return createComponent(`<div class="my-4 bg-white shadow p-4 rounded">Click to edit tile content...</div>`);
+          return createComponent(`
+            <div class="my-4 bg-white shadow p-4 rounded">
+              <h3 class="font-semibold mb-2">Tile Title</h3>
+              <p>Click to edit tile content...</p>
+            </div>`);
+        case "button":
+          return createComponent(`
+            <div class="my-4">
+              <button class="action-btn px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                Click Me
+              </button>
+            </div>`);
+        case "collapse":
+          return createComponent(`
+            <div class="my-4 bg-white border rounded overflow-hidden">
+              <button class="collapse-toggle w-full text-left p-3 bg-gray-100 hover:bg-gray-200 font-medium">
+                Collapsible Section
+              </button>
+              <div class="collapsible-content p-4">
+                <p>Click to edit content...</p>
+              </div>
+            </div>`);
+        case "table":
+          return createComponent(`
+            <div class="my-4 bg-white border rounded overflow-hidden">
+              <table class="w-full">
+                <thead>
+                  <tr class="bg-gray-100">
+                    <th class="p-2 text-left">Header 1</th>
+                    <th class="p-2 text-left">Header 2</th>
+                    <th class="p-2 text-left">Header 3</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr class="border-t">
+                    <td class="p-2">Row 1, Cell 1</td>
+                    <td class="p-2">Row 1, Cell 2</td>
+                    <td class="p-2">Row 1, Cell 3</td>
+                  </tr>
+                  <tr class="border-t">
+                    <td class="p-2">Row 2, Cell 1</td>
+                    <td class="p-2">Row 2, Cell 2</td>
+                    <td class="p-2">Row 2, Cell 3</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>`);
+        case "progress":
+          return createComponent(`
+            <div class="my-4 bg-white p-4 border rounded">
+              <div class="mb-2 flex justify-between">
+                <span>Progress</span>
+                <span>0%</span>
+              </div>
+              <div class="w-full bg-gray-200 rounded-full h-2.5">
+                <div class="progress-bar bg-blue-600 h-2.5 rounded-full" style="width: 0%"></div>
+              </div>
+            </div>`);
+        case "toggle":
+          return createComponent(`
+            <div class="my-4 bg-white p-4 border rounded">
+              <label class="flex items-center space-x-3">
+                <span class="text-gray-700">Toggle Switch</span>
+                <div class="relative inline-block w-10 mr-2 align-middle select-none">
+                  <input type="checkbox" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer"/>
+                  <label class="toggle-label block overflow-hidden h-6 rounded-full bg-gray-300 cursor-pointer"></label>
+                </div>
+              </label>
+            </div>`);
         default:
           return null;
       }
+    }
+
+    // Initialize map component
+    function initMap(element) {
+      const mapDiv = element.querySelector('#map');
+      if (!mapDiv) return;
+      
+      // Initialize map centered on a default location
+      const map = L.map(mapDiv).setView([51.505, -0.09], 13);
+      
+      // Add OpenStreetMap tiles
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+      }).addTo(map);
+      
+      // Add a marker
+      L.marker([51.5, -0.09]).addTo(map)
+        .bindPopup('Sample location')
+        .openPopup();
+      
+      // Store map instance on element for later access
+      element._mapInstance = map;
+    }
+
+    // Initialize chart component
+    function initChart(element) {
+      const canvas = element.querySelector('canvas');
+      if (!canvas) return;
+      
+      const ctx = canvas.getContext('2d');
+      const chart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: ['January', 'February', 'March', 'April', 'May', 'June'],
+          datasets: [{
+            label: 'Sample Data',
+            data: [12, 19, 3, 5, 2, 3],
+            backgroundColor: [
+              'rgba(255, 99, 132, 0.2)',
+              'rgba(54, 162, 235, 0.2)',
+              'rgba(255, 206, 86, 0.2)',
+              'rgba(75, 192, 192, 0.2)',
+              'rgba(153, 102, 255, 0.2)',
+              'rgba(255, 159, 64, 0.2)'
+            ],
+            borderColor: [
+              'rgba(255, 99, 132, 1)',
+              'rgba(54, 162, 235, 1)',
+              'rgba(255, 206, 86, 1)',
+              'rgba(75, 192, 192, 1)',
+              'rgba(153, 102, 255, 1)',
+              'rgba(255, 159, 64, 1)'
+            ],
+            borderWidth: 1
+          }]
+        },
+        options: {
+          scales: {
+            y: {
+              beginAtZero: true
+            }
+          },
+          responsive: true,
+          maintainAspectRatio: false
+        }
+      });
+      
+      // Store chart instance on element for later access
+      element._chartInstance = chart;
+    }
+
+    // Setup button component
+    function setupButton(element) {
+      const button = element.querySelector('.action-btn');
+      if (!button) return;
+      
+      button.addEventListener('click', function() {
+        alert('Button clicked! Edit this behavior in the properties panel.');
+      });
+    }
+
+    // Setup collapsible component
+    function setupCollapse(element) {
+      const toggle = element.querySelector('.collapse-toggle');
+      const content = element.querySelector('.collapsible-content');
+      
+      if (!toggle || !content) return;
+      
+      toggle.addEventListener('click', function() {
+        content.classList.toggle('expanded');
+      });
+    }
+
+    // Setup tabs component
+    function setupTabs(element) {
+      const tabButtons = element.querySelectorAll('.tab-btn');
+      const tabContents = element.querySelectorAll('.tab-content');
+      
+      tabButtons.forEach(button => {
+        button.addEventListener('click', function() {
+          const tabId = this.getAttribute('data-tab');
+          
+          // Update button states
+          tabButtons.forEach(btn => {
+            btn.classList.remove('border-b-2', 'border-blue-500', 'text-blue-500');
+          });
+          this.classList.add('border-b-2', 'border-blue-500', 'text-blue-500');
+          
+          // Show selected tab content
+          tabContents.forEach(content => {
+            content.classList.remove('active');
+          });
+          document.getElementById(tabId).classList.add('active');
+        });
+      });
+    }
+
+    // Setup toggle switch component
+    function setupToggle(element) {
+      const toggle = element.querySelector('.toggle-checkbox');
+      const label = element.querySelector('.toggle-label');
+      
+      if (!toggle || !label) return;
+      
+      toggle.addEventListener('change', function() {
+        if (this.checked) {
+          label.classList.remove('bg-gray-300');
+          label.classList.add('bg-green-500');
+        } else {
+          label.classList.remove('bg-green-500');
+          label.classList.add('bg-gray-300');
+        }
+      });
+    }
+
+    // Show properties panel for selected component
+    function showPropertiesPanel(element) {
+      const panel = document.getElementById('properties-panel');
+      panel.innerHTML = '';
+      
+      // Create basic properties for all components
+      const type = element.querySelector('[data-type]')?.getAttribute('data-type') || 'unknown';
+      
+      const title = document.createElement('h3');
+      title.className = 'font-semibold text-lg mb-2';
+      title.textContent = `${type.charAt(0).toUpperCase() + type.slice(1)} Properties`;
+      panel.appendChild(title);
+      
+      // Common properties
+      const idField = createPropertyField('ID', 'text', element.id || '', (value) => {
+        element.id = value;
+      });
+      panel.appendChild(idField);
+      
+      const classField = createPropertyField('Classes', 'text', element.className, (value) => {
+        element.className = value;
+      });
+      panel.appendChild(classField);
+      
+      // Type-specific properties
+      switch(type) {
+        case 'button':
+          const button = element.querySelector('button');
+          if (button) {
+            const textField = createPropertyField('Button Text', 'text', button.textContent, (value) => {
+              button.textContent = value;
+            });
+            panel.appendChild(textField);
+            
+            const colorField = createPropertyField('Button Color', 'color', '#3b82f6', (value) => {
+              button.style.backgroundColor = value;
+            });
+            panel.appendChild(colorField);
+          }
+          break;
+          
+        case 'map':
+          const mapInstance = element._mapInstance;
+          if (mapInstance) {
+            const centerField = createPropertyField('Center (lat,lng)', 'text', '51.505, -0.09', (value) => {
+              const [lat, lng] = value.split(',').map(Number);
+              if (!isNaN(lat) && !isNaN(lng)) {
+                mapInstance.setView([lat, lng], mapInstance.getZoom());
+              }
+            });
+            panel.appendChild(centerField);
+            
+            const zoomField = createPropertyField('Zoom Level', 'number', mapInstance.getZoom(), (value) => {
+              mapInstance.setZoom(parseInt(value));
+            });
+            panel.appendChild(zoomField);
+          }
+          break;
+          
+        case 'chart':
+          // Chart properties would go here
+          break;
+      }
+      
+      // Show the panel
+      document.getElementById('properties-panel').classList.remove('hidden');
+    }
+
+    function createPropertyField(label, type, value, onChange) {
+      const container = document.createElement('div');
+      container.className = 'space-y-1';
+      
+      const labelEl = document.createElement('label');
+      labelEl.className = 'block text-sm font-medium';
+      labelEl.textContent = label;
+      container.appendChild(labelEl);
+      
+      const input = document.createElement('input');
+      input.type = type;
+      input.className = 'border p-2 rounded w-full';
+      input.value = value;
+      input.addEventListener('change', () => onChange(input.value));
+      container.appendChild(input);
+      
+      return container;
+    }
+
+    // Context menu actions
+    function duplicateSelectedComponent() {
+      if (!selectedComponent) return;
+      
+      const clone = selectedComponent.cloneNode(true);
+      selectedComponent.parentNode.insertBefore(clone, selectedComponent.nextSibling);
+      
+      // Reinitialize if needed
+      const type = selectedComponent.querySelector('[data-type]')?.getAttribute('data-type');
+      if (type) initializeComponent(clone, type);
+      
+      contextMenu.style.display = 'none';
+    }
+
+    function deleteSelectedComponent() {
+      if (!selectedComponent) return;
+      selectedComponent.remove();
+      contextMenu.style.display = 'none';
+    }
+
+    function moveComponentUp() {
+      if (!selectedComponent) return;
+      const prev = selectedComponent.previousElementSibling;
+      if (prev) {
+        selectedComponent.parentNode.insertBefore(selectedComponent, prev);
+      }
+      contextMenu.style.display = 'none';
+    }
+
+    function moveComponentDown() {
+      if (!selectedComponent) return;
+      const next = selectedComponent.nextElementSibling;
+      if (next) {
+        selectedComponent.parentNode.insertBefore(next, selectedComponent);
+      }
+      contextMenu.style.display = 'none';
+    }
+
+    function editComponentProperties() {
+      if (!selectedComponent) return;
+      showPropertiesPanel(selectedComponent);
+      contextMenu.style.display = 'none';
+    }
+
+    // Export functions
+    function showExportOptions() {
+      document.getElementById('export-modal').classList.remove('hidden');
+    }
+
+    function hideExportModal() {
+      document.getElementById('export-modal').classList.add('hidden');
+    }
+
+    function clearWorkspace() {
+      if (confirm('Are you sure you want to clear the workspace?')) {
+        const workspace = document.getElementById('workspace');
+        workspace.innerHTML = '<p class="text-gray-400 italic text-center mt-32">Drag components here to start building your tool...</p>';
+      }
+    }
+
+    function exportHTML() {
+      const workspace = document.getElementById('workspace');
+      const clone = workspace.cloneNode(true);
+      
+      // Remove delete buttons and other builder-specific elements
+      clone.querySelectorAll('.delete-btn, .no-export').forEach(el => el.remove());
+      
+      // Prepare the HTML document
+      let html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Exported Tool</title>
+  <script src="https://cdn.tailwindcss.com"></script>`;
+      
+      // Include selected libraries
+      if (document.getElementById('include-leaflet').checked) {
+        html += `
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>`;
+      }
+      
+      if (document.getElementById('include-chartjs').checked) {
+        html += `
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>`;
+      }
+      
+      html += `
+  <style>
+    .collapsible-content {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.2s ease-out;
+    }
+    .collapsible-content.expanded {
+      max-height: 1000px;
+    }
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
+    }
+    #map { height: 300px; }
+  </style>
+</head>
+<body class="bg-gray-100 p-6">
+`;
+      
+      // Add the workspace content
+      html += clone.innerHTML;
+      
+      // Add initialization scripts for interactive components
+      html += `
+<script>
+document.addEventListener('DOMContentLoaded', function() {`;
+      
+      // Initialize maps
+      if (document.getElementById('include-leaflet').checked) {
+        html += `
+  // Initialize maps
+  document.querySelectorAll('[id^="map"]').forEach(mapDiv => {
+    const map = L.map(mapDiv).setView([51.505, -0.09], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
+    L.marker([51.5, -0.09]).addTo(map).bindPopup('Sample location').openPopup();
+  });`;
+      }
+      
+      // Initialize charts
+      if (document.getElementById('include-chartjs').checked) {
+        html += `
+  // Initialize charts
+  document.querySelectorAll('canvas').forEach(canvas => {
+    const ctx = canvas.getContext('2d');
+    new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: ['January', 'February', 'March', 'April', 'May', 'June'],
+        datasets: [{
+          label: 'Sample Data',
+          data: [12, 19, 3, 5, 2, 3],
+          backgroundColor: [
+            'rgba(255, 99, 132, 0.2)',
+            'rgba(54, 162, 235, 0.2)',
+            'rgba(255, 206, 86, 0.2)',
+            'rgba(75, 192, 192, 0.2)',
+            'rgba(153, 102, 255, 0.2)',
+            'rgba(255, 159, 64, 0.2)'
+          ],
+          borderColor: [
+            'rgba(255, 99, 132, 1)',
+            'rgba(54, 162, 235, 1)',
+            'rgba(255, 206, 86, 1)',
+            'rgba(75, 192, 192, 1)',
+            'rgba(153, 102, 255, 1)',
+            'rgba(255, 159, 64, 1)'
+          ],
+          borderWidth: 1
+        }]
+      },
+      options: {
+        scales: {
+          y: {
+            beginAtZero: true
+          }
+        }
+      }
+    });
+  });`;
+      }
+      
+      // Add event handlers for tabs, collapsibles, etc.
+      html += `
+  // Setup tabs
+  document.querySelectorAll('.tab-btn').forEach(button => {
+    button.addEventListener('click', function() {
+      const tabId = this.getAttribute('data-tab');
+      const container = this.closest('.workspace-item');
+      
+      // Update button states
+      container.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('border-b-2', 'border-blue-500', 'text-blue-500');
+      });
+      this.classList.add('border-b-2', 'border-blue-500', 'text-blue-500');
+      
+      // Show selected tab content
+      container.querySelectorAll('.tab-content').forEach(content => {
+        content.classList.remove('active');
+      });
+      document.getElementById(tabId).classList.add('active');
+    });
+  });
+  
+  // Setup collapsible sections
+  document.querySelectorAll('.collapse-toggle').forEach(toggle => {
+    toggle.addEventListener('click', function() {
+      const content = this.nextElementSibling;
+      content.classList.toggle('expanded');
+    });
+  });
+  
+  // Setup toggle switches
+  document.querySelectorAll('.toggle-checkbox').forEach(toggle => {
+    const label = toggle.nextElementSibling;
+    toggle.addEventListener('change', function() {
+      if (this.checked) {
+        label.classList.remove('bg-gray-300');
+        label.classList.add('bg-green-500');
+      } else {
+        label.classList.remove('bg-green-500');
+        label.classList.add('bg-gray-300');
+      }
+    });
+  });
+  
+  // Setup buttons
+  document.querySelectorAll('.action-btn').forEach(button => {
+    button.addEventListener('click', function() {
+      alert('Button clicked!');
+    });
+  });
+});
+</script>
+</body>
+</html>`;
+      
+      // Create download
+      const blob = new Blob([html], {type: 'text/html'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'exported-tool.html';
+      a.click();
+      URL.revokeObjectURL(url);
+      
+      hideExportModal();
     }
   </script>
 </body>
